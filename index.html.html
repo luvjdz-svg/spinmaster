@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spin Master — 인터랙티브 룰렛</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+<style>
+:root{--bg:#0a0a14;--bg2:#10101e;--bg3:#16162a;--border:rgba(100,100,255,0.15);--neon-blue:#4af;--neon-purple:#a78bfa;--neon-pink:#f472b6;--neon-green:#34d399;--neon-yellow:#fbbf24;--text:#e2e8f0;--text-muted:#64748b;--radius:12px;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans KR',sans-serif;min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 20% 10%,rgba(67,97,238,0.08) 0%,transparent 60%),radial-gradient(ellipse at 80% 90%,rgba(167,139,250,0.06) 0%,transparent 60%);pointer-events:none;z-index:0;}
+
+header{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;border-bottom:1px solid var(--border);background:rgba(10,10,20,0.8);backdrop-filter:blur(12px);}
+.logo{font-family:'Orbitron',sans-serif;font-size:1.4rem;font-weight:900;background:linear-gradient(90deg,#4af,#a78bfa,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:2px;}
+.header-right{display:flex;align-items:center;gap:0.75rem;}
+select#langSelect{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer;outline:none;font-family:'Noto Sans KR',sans-serif;}
+.mute-btn{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.35rem 0.65rem;cursor:pointer;font-size:1rem;transition:all 0.2s;}
+.mute-btn:hover{border-color:var(--neon-blue);}
+
+main{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:1.5rem 1rem;display:grid;grid-template-columns:1fr minmax(260px,320px);gap:1.5rem;}
+@media(max-width:768px){main{grid-template-columns:1fr;}}
+
+.roulette-section{display:flex;flex-direction:column;align-items:center;gap:1rem;}
+.wheel-wrapper{position:relative;width:min(460px,90vw);height:min(460px,90vw);}
+
+/* Wheel visual effects */
+#rouletteCanvas{width:100%;height:100%;filter:drop-shadow(0 0 24px rgba(74,170,255,0.3));transition:filter 0.3s;}
+#rouletteCanvas.spinning{filter:drop-shadow(0 0 40px rgba(167,139,250,0.6));}
+#rouletteCanvas.ghost-mode{filter:drop-shadow(0 0 30px rgba(255,255,255,0.9)) brightness(0.15) contrast(2);}
+#rouletteCanvas.turbo-mode{filter:drop-shadow(0 0 50px rgba(255,80,0,0.9)) saturate(2);}
+#rouletteCanvas.freeze-mode{filter:drop-shadow(0 0 40px rgba(100,200,255,0.9)) hue-rotate(160deg) saturate(2);}
+#rouletteCanvas.mirror-mode{transform:scaleX(-1);}
+
+.wheel-pointer{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:32px solid #f472b6;filter:drop-shadow(0 0 8px #f472b6);z-index:5;transition:filter 0.3s;}
+
+/* Skill effect overlays on wheel */
+.wheel-fx{position:absolute;inset:0;border-radius:50%;pointer-events:none;opacity:0;transition:opacity 0.3s;}
+.wheel-fx.quake{animation:quakeAnim 0.1s infinite;}
+@keyframes quakeAnim{0%,100%{transform:translate(0,0);}25%{transform:translate(-3px,2px);}75%{transform:translate(3px,-2px);}50%{transform:translate(2px,3px);}}
+
+/* Spin button */
+.spin-btn{padding:0.85rem 2.8rem;font-family:'Orbitron',sans-serif;font-size:1rem;font-weight:700;letter-spacing:2px;background:linear-gradient(135deg,#4361ee,#7209b7);border:none;border-radius:50px;color:#fff;cursor:pointer;box-shadow:0 0 20px rgba(67,97,238,0.5);transition:all 0.2s;position:relative;overflow:hidden;}
+.spin-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,#4af,#a78bfa);opacity:0;transition:opacity 0.2s;}
+.spin-btn:hover::before{opacity:0.25;}
+.spin-btn:active{transform:scale(0.96);}
+.spin-btn:disabled{opacity:0.45;cursor:not-allowed;}
+
+/* ── SKILL GRID ── */
+.skills-area{width:100%;max-width:500px;}
+.skills-label{font-size:0.68rem;color:var(--text-muted);letter-spacing:1.5px;text-transform:uppercase;text-align:center;margin-bottom:0.5rem;}
+.skills-container{display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;}
+@media(max-width:480px){.skills-container{grid-template-columns:repeat(3,1fr);gap:0.4rem;}}
+
+.skill-card{
+  position:relative;display:flex;flex-direction:column;align-items:center;
+  gap:0.25rem;padding:0.55rem 0.4rem;
+  background:var(--bg3);border:1px solid rgba(100,100,255,0.2);
+  border-radius:var(--radius);color:var(--text);
+  font-size:0.75rem;font-family:'Noto Sans KR',sans-serif;
+  overflow:hidden;transition:all 0.3s;pointer-events:none;user-select:none;
+  min-height:72px;
+}
+.skill-card .sk-icon{font-size:1.5rem;line-height:1;}
+.skill-card .sk-name{font-weight:600;font-size:0.72rem;text-align:center;line-height:1.2;}
+.skill-card .sk-desc{font-size:0.6rem;color:var(--text-muted);text-align:center;line-height:1.3;}
+.skill-card.standby{opacity:0.35;border-color:rgba(100,100,255,0.1);}
+
+/* Color themes per skill */
+.skill-card.sk-reverse{--sc:#4af;}
+.skill-card.sk-boost{--sc:#fbbf24;}
+.skill-card.sk-turbo{--sc:#f97316;}
+.skill-card.sk-ghost{--sc:#a78bfa;}
+.skill-card.sk-freeze{--sc:#38bdf8;}
+.skill-card.sk-quake{--sc:#f43f5e;}
+
+.skill-card.active{
+  border-color:var(--sc,#fbbf24);
+  box-shadow:0 0 20px color-mix(in srgb, var(--sc,#fbbf24) 50%, transparent);
+  opacity:1;
+  animation:skillPulse 0.7s ease infinite alternate;
+}
+@keyframes skillPulse{from{box-shadow:0 0 10px color-mix(in srgb,var(--sc,#fbbf24) 30%,transparent);}to{box-shadow:0 0 28px color-mix(in srgb,var(--sc,#fbbf24) 70%,transparent);}}
+
+.skill-card.fired{
+  opacity:1;
+  animation:skillFired 0.7s ease forwards;
+  border-color:var(--sc,#fbbf24);
+}
+@keyframes skillFired{
+  0%{transform:scale(1);}
+  30%{transform:scale(1.15);box-shadow:0 0 40px color-mix(in srgb,var(--sc,#fbbf24) 90%,transparent);}
+  60%{transform:scale(0.95);}
+  100%{transform:scale(1);opacity:0.6;}
+}
+
+.skill-card.sustained{
+  opacity:1;border-color:var(--sc,#fbbf24);
+  animation:sustainedPulse 1.2s ease infinite alternate;
+}
+@keyframes sustainedPulse{from{opacity:0.7;}to{opacity:1;box-shadow:0 0 16px color-mix(in srgb,var(--sc,#fbbf24) 50%,transparent);}}
+
+/* INCOMING badge */
+.skill-badge{
+  position:absolute;top:0;left:0;right:0;
+  background:var(--sc,#fbbf24);color:#111;
+  font-size:0.6rem;font-weight:800;font-family:'Orbitron',sans-serif;
+  padding:2px 0;text-align:center;
+  animation:badgeSlide 0.3s ease forwards;
+}
+@keyframes badgeSlide{from{transform:translateY(-100%);}to{transform:translateY(0);}}
+
+/* Countdown bar */
+.skill-timer-bar{
+  position:absolute;bottom:0;left:0;height:3px;
+  background:var(--sc,#fbbf24);width:100%;
+  transform-origin:left;
+  transition:transform 0.1s linear;
+}
+
+/* Result */
+.result-panel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.2rem;min-height:64px;display:flex;align-items:center;justify-content:center;width:100%;max-width:460px;text-align:center;}
+.result-panel .result-label{font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;}
+.result-panel .result-value{font-family:'Orbitron',sans-serif;font-size:1.5rem;font-weight:700;animation:popIn 0.4s cubic-bezier(0.34,1.56,0.64,1);}
+@keyframes popIn{from{transform:scale(0.6);opacity:0;}to{transform:scale(1);opacity:1;}}
+
+/* Sidebar */
+.sidebar{display:flex;flex-direction:column;gap:1rem;}
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.1rem;}
+.panel-title{font-size:0.75rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.8rem;}
+.add-row{display:flex;gap:0.5rem;}
+.add-row input{flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:0.5rem 0.75rem;font-size:0.9rem;font-family:'Noto Sans KR',sans-serif;outline:none;transition:border-color 0.2s;}
+.add-row input:focus{border-color:var(--neon-blue);}
+.add-row button{background:linear-gradient(135deg,#4361ee,#7209b7);border:none;border-radius:8px;color:#fff;padding:0.5rem 0.85rem;cursor:pointer;font-size:1rem;transition:opacity 0.2s;}
+.add-row button:hover{opacity:0.85;}
+.items-list{display:flex;flex-direction:column;gap:0.4rem;max-height:280px;overflow-y:auto;}
+.items-list::-webkit-scrollbar{width:4px;}
+.items-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.item-row{display:flex;align-items:center;gap:0.5rem;background:var(--bg3);border-radius:8px;padding:0.45rem 0.6rem;animation:slideIn 0.2s ease;}
+@keyframes slideIn{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:none;}}
+.item-color{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+.item-name{flex:1;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.item-boost{font-size:0.7rem;color:var(--neon-green);background:rgba(52,211,153,0.12);padding:1px 6px;border-radius:4px;display:none;}
+.item-row.boosted .item-boost{display:block;}
+.item-del{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.9rem;padding:2px 4px;border-radius:4px;transition:color 0.2s;line-height:1;}
+.item-del:hover{color:#f87171;}
+
+/* ══ WIN OVERLAY ══ */
+#winOverlay{position:fixed;inset:0;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,5,18,0.92);backdrop-filter:blur(10px);opacity:0;pointer-events:none;transition:opacity 0.4s;}
+#winOverlay.show{opacity:1;pointer-events:all;}
+.win-burst{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(167,139,250,0.22) 0%,transparent 70%);animation:burstPulse 1.1s ease-in-out infinite alternate;}
+@keyframes burstPulse{from{opacity:0.3;}to{opacity:1;}}
+.win-rings{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+.win-ring{position:absolute;border-radius:50%;border:2px solid;animation:ringExpand 1.6s ease-out infinite;}
+.win-ring:nth-child(1){width:200px;height:200px;border-color:rgba(167,139,250,0.5);animation-delay:0s;}
+.win-ring:nth-child(2){width:360px;height:360px;border-color:rgba(74,170,255,0.35);animation-delay:0.35s;}
+.win-ring:nth-child(3){width:520px;height:520px;border-color:rgba(244,114,182,0.2);animation-delay:0.7s;}
+@keyframes ringExpand{0%{transform:scale(0.4);opacity:1;}100%{transform:scale(1.6);opacity:0;}}
+.win-tagline{position:relative;z-index:1;font-family:'Orbitron',sans-serif;font-size:clamp(0.7rem,1.8vw,0.95rem);letter-spacing:5px;text-transform:uppercase;color:var(--neon-purple);opacity:0;animation:fadeUp 0.5s 0.1s forwards;margin-bottom:0.5rem;}
+.win-trophy{position:relative;z-index:1;font-size:clamp(4rem,12vw,7rem);line-height:1;animation:trophySpin 0.7s 0.2s cubic-bezier(0.34,1.56,0.64,1) both;filter:drop-shadow(0 0 30px gold);}
+@keyframes trophySpin{from{transform:scale(0) rotate(-180deg);}to{transform:scale(1) rotate(0deg);}}
+.win-label{position:relative;z-index:1;font-family:'Orbitron',sans-serif;font-size:clamp(0.8rem,2.2vw,1rem);color:var(--neon-yellow);letter-spacing:4px;margin:0.5rem 0 0.2rem;opacity:0;animation:fadeUp 0.5s 0.35s forwards;}
+.win-name{position:relative;z-index:1;font-family:'Orbitron',sans-serif;font-size:clamp(2rem,7vw,4.8rem);font-weight:900;opacity:0;animation:nameSlam 0.55s 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards;text-shadow:0 0 50px currentColor,0 0 100px currentColor;max-width:90vw;text-align:center;word-break:break-word;line-height:1.1;}
+@keyframes nameSlam{0%{transform:scale(2.8);opacity:0;}55%{transform:scale(0.9);}100%{transform:scale(1);opacity:1;}}
+.win-congrats{position:relative;z-index:1;font-size:clamp(1rem,3.5vw,1.6rem);color:#fff;opacity:0;animation:fadeUp 0.5s 0.85s forwards;margin-top:0.4rem;text-align:center;padding:0 1rem;}
+.win-stars{position:relative;z-index:1;font-size:clamp(1.3rem,3.5vw,2.2rem);letter-spacing:6px;opacity:0;animation:fadeUp 0.5s 1s forwards;margin-top:0.4rem;}
+.win-skills-used{position:relative;z-index:1;display:flex;gap:0.4rem;flex-wrap:wrap;justify-content:center;opacity:0;animation:fadeUp 0.5s 1.1s forwards;margin-top:0.5rem;}
+.win-skill-chip{font-size:0.78rem;padding:0.25rem 0.75rem;border-radius:20px;border:1px solid rgba(52,211,153,0.4);color:var(--neon-green);background:rgba(52,211,153,0.1);}
+.win-close{position:relative;z-index:1;margin-top:1.8rem;padding:0.7rem 2.5rem;font-family:'Orbitron',sans-serif;font-size:0.9rem;font-weight:700;letter-spacing:2px;background:linear-gradient(135deg,#4361ee,#7209b7);border:none;border-radius:50px;color:#fff;cursor:pointer;box-shadow:0 0 20px rgba(67,97,238,0.5);opacity:0;animation:fadeUp 0.5s 1.3s forwards;transition:transform 0.2s;}
+.win-close:hover{transform:scale(1.06);}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:none;}}
+
+/* Coffee */
+.coffee-float{position:fixed;bottom:1.5rem;right:1.5rem;z-index:100;}
+.coffee-btn{display:flex;align-items:center;gap:0.5rem;background:linear-gradient(135deg,#f59e0b,#ef4444);border:none;border-radius:50px;color:#fff;font-size:0.85rem;font-weight:700;padding:0.65rem 1.1rem;cursor:pointer;box-shadow:0 4px 20px rgba(245,158,11,0.4);font-family:'Noto Sans KR',sans-serif;transition:all 0.2s;white-space:nowrap;}
+.coffee-btn:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(245,158,11,0.5);}
+.modal-bg{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:1rem;}
+.modal-bg.hidden{display:none;}
+.modal{background:var(--bg2);border:1px solid rgba(245,158,11,0.3);border-radius:16px;padding:2rem;max-width:400px;width:100%;text-align:center;animation:modalIn 0.3s cubic-bezier(0.34,1.56,0.64,1);}
+@keyframes modalIn{from{transform:scale(0.8);opacity:0;}to{transform:scale(1);opacity:1;}}
+.modal h2{font-size:1.5rem;margin-bottom:0.5rem;}
+.modal p{color:var(--text-muted);font-size:0.9rem;margin-bottom:1.5rem;line-height:1.6;}
+.modal-btns{display:flex;gap:0.75rem;justify-content:center;}
+.modal-btns a,.modal-btns button{padding:0.65rem 1.4rem;border-radius:8px;font-size:0.9rem;font-weight:700;cursor:pointer;text-decoration:none;border:none;font-family:'Noto Sans KR',sans-serif;transition:all 0.2s;}
+.btn-paypal{background:linear-gradient(135deg,#003087,#009cde);color:#fff;box-shadow:0 4px 12px rgba(0,156,222,0.3);}
+.btn-paypal:hover{opacity:0.88;transform:translateY(-1px);}
+.btn-cancel{background:var(--bg3);color:var(--text-muted);border:1px solid var(--border)!important;}
+.btn-cancel:hover{color:var(--text);}
+#toast{position:fixed;top:1rem;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--neon-green);color:var(--neon-green);padding:0.6rem 1.4rem;border-radius:50px;font-size:0.85rem;font-weight:500;z-index:400;pointer-events:none;opacity:0;transition:opacity 0.3s;white-space:nowrap;}
+#toast.show{opacity:1;}
+/* Big skill announcement overlay */
+#skillAnnounce{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:450;pointer-events:none;opacity:0;text-align:center;transition:opacity 0.2s;}
+#skillAnnounce.pop{animation:announcePop 1.2s cubic-bezier(0.34,1.56,0.64,1) forwards;}
+@keyframes announcePop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.4);}15%{opacity:1;transform:translate(-50%,-50%) scale(1.1);}30%{transform:translate(-50%,-50%) scale(1);}75%{opacity:1;transform:translate(-50%,-50%) scale(1);}100%{opacity:0;transform:translate(-50%,-50%) scale(0.8);}}
+.announce-icon{font-size:clamp(3rem,10vw,5rem);display:block;filter:drop-shadow(0 0 20px currentColor);}
+.announce-name{font-family:'Orbitron',sans-serif;font-size:clamp(1rem,3vw,1.6rem);font-weight:900;letter-spacing:3px;text-transform:uppercase;margin-top:0.3rem;}
+.grid-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;opacity:0.035;}
+.grid-bg svg{width:100%;height:100%;}
+</style>
+</head>
+<body>
+<div class="grid-bg"><svg xmlns="http://www.w3.org/2000/svg"><defs><pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse"><path d="M 60 0 L 0 0 0 60" fill="none" stroke="cyan" stroke-width="0.5"/></pattern></defs><rect width="100%" height="100%" fill="url(#grid)"/></svg></div>
+
+<header>
+  <div class="logo">SPIN MASTER</div>
+  <div class="header-right">
+    <div style="display:flex;align-items:center;gap:0.5rem;">
+      <button class="mute-btn" id="muteBtn" title="음소거">🔊</button>
+      <input type="range" id="volSlider" min="0" max="100" value="70" step="1"
+        style="width:72px;height:4px;accent-color:var(--neon-blue);cursor:pointer;vertical-align:middle;border-radius:2px;">
+    </div>
+    <select id="langSelect"></select>
+  </div>
+</header>
+
+<main>
+  <div class="roulette-section">
+    <div class="wheel-wrapper">
+      <div class="wheel-pointer" id="wheelPointer"></div>
+      <canvas id="rouletteCanvas" width="500" height="500"></canvas>
+      <div class="wheel-fx" id="wheelFx"></div>
+    </div>
+    <button class="spin-btn" id="spinBtn">▶ SPIN</button>
+
+    <div class="skills-area">
+      <div class="skills-label" data-i18n="skills_label">✨ 랜덤 스킬 발동 대기 중</div>
+      <div class="skills-container" id="skillsContainer">
+        <!-- 6 skill cards injected by JS -->
+      </div>
+    </div>
+
+    <div class="result-panel">
+      <div id="resultContent" style="color:var(--text-muted);font-size:0.85rem;" data-i18n="result_placeholder">결과가 여기에 표시됩니다</div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="panel">
+      <div class="panel-title" data-i18n="panel_add">항목 추가</div>
+      <div class="add-row">
+        <input type="text" id="itemInput" placeholder="항목 입력 후 Enter" data-i18n-placeholder="input_placeholder">
+        <button id="addBtn">+</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title" data-i18n="panel_items">항목 목록</div>
+      <div class="items-list" id="itemsList"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title" data-i18n="panel_history">당첨 기록</div>
+      <div id="historyList" style="font-size:0.8rem;color:var(--text-muted);display:flex;flex-direction:column;gap:0.3rem;max-height:150px;overflow-y:auto;"></div>
+    </div>
+  </div>
+</main>
+
+<!-- Big skill announce -->
+<div id="skillAnnounce"><span class="announce-icon" id="announceIcon"></span><div class="announce-name" id="announceName"></div></div>
+
+<!-- WIN OVERLAY -->
+<div id="winOverlay">
+  <div class="win-burst"></div>
+  <div class="win-rings"><div class="win-ring"></div><div class="win-ring"></div><div class="win-ring"></div></div>
+  <div class="win-tagline" id="winTagline"></div>
+  <div class="win-trophy">🏆</div>
+  <div class="win-label" id="winLabel">당첨!</div>
+  <div class="win-name" id="winName"></div>
+  <div class="win-congrats" id="winCongrats"></div>
+  <div class="win-stars">⭐ ⭐ ⭐ ⭐ ⭐</div>
+  <div class="win-skills-used" id="winSkillsUsed"></div>
+  <button class="win-close" id="winClose">계속하기 →</button>
+</div>
+
+<div class="coffee-float">
+  <button class="coffee-btn" id="coffeeBtn">☕ <span data-i18n="coffee_btn">개발자 커피 사주기</span></button>
+</div>
+<div class="modal-bg hidden" id="coffeeModal">
+  <div class="modal">
+    <div style="font-size:2.5rem;margin-bottom:0.5rem">☕</div>
+    <h2 data-i18n="modal_title">커피 한 잔 사주세요!</h2>
+    <p data-i18n="modal_desc">이 앱이 마음에 드셨나요? 개발자에게 커피 한 잔을 후원해 주시면 더 좋은 앱을 만들 수 있어요! ☺️</p>
+    <div class="modal-btns">
+      <a class="btn-paypal" href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=luvjdz@gmail.com&amount=5.00&currency_code=USD&item_name=Coffee%20for%20Developer" target="_blank" rel="noopener" data-i18n="modal_pay">💙 $5 후원하기</a>
+      <button class="btn-cancel" id="modalClose" data-i18n="modal_close">닫기</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════
+   i18n
+══════════════════════════════════════════════════════════ */
+const I18N={
+  ko:{
+    skills_label:'✨ 랜덤 스킬 발동 대기 중',
+    result_placeholder:'결과가 여기에 표시됩니다',
+    panel_add:'항목 추가',panel_items:'항목 목록',panel_history:'당첨 기록',
+    input_placeholder:'항목 입력 후 Enter',
+    coffee_btn:'개발자 커피 사주기',
+    modal_title:'커피 한 잔 사주세요!',modal_desc:'이 앱이 마음에 드셨나요? 개발자에게 커피 한 잔을 후원해 주시면 더 좋은 앱을 만들 수 있어요! ☺️',
+    modal_pay:'💙 $5 후원하기',modal_close:'닫기',
+    result_label:'당첨!',result_hint:'SPIN 버튼을 눌러주세요',win_close:'계속하기 →',
+    toast_noitem:'항목을 먼저 추가해주세요',history_empty:'기록 없음',no_items_hint:'오른쪽에서 항목을 추가하세요',
+    win_congrats_arr:['축하드립니다! 🎉','대박!! 믿을 수가 없어요! 😱','운명이 선택했습니다! ✨','오늘의 주인공은 바로 당신! 🌟','이건... 전설이다! 🚀'],
+    win_taglines:['🎊 압도적 축하 🎊','✨ 당신이 선택받았습니다 ✨','🌟 전설이 탄생했습니다 🌟','🎯 운명의 선택! 🎯','🏆 오늘의 MVP! 🏆'],
+    skills_used:'발동된 스킬',
+    // skill names & descs
+    sk_reverse_name:'역회전',sk_reverse_desc:'방향이 뒤집힌다',
+    sk_boost_name:'확률 강화',sk_boost_desc:'랜덤 항목 3배 확대',
+    sk_turbo_name:'터보 부스트',sk_turbo_desc:'속도가 폭발적으로 증가',
+    sk_ghost_name:'블랙아웃',sk_ghost_desc:'화면이 어두워진다',
+    sk_freeze_name:'슬로우 모션',sk_freeze_desc:'속도가 느려진다',
+    sk_quake_name:'지진',sk_quake_desc:'룰렛이 격렬히 흔들린다',
+    // toast msgs
+    toast_reverse:'🔄 역회전 발동! 방향이 바뀌었습니다!',
+    toast_boost:'⚡ 확률 강화 발동! ',
+    toast_turbo:'🚀 터보 부스트!! 폭발적 가속!!',
+    toast_ghost:'👻 블랙아웃! 화면이 어두워집니다...',
+    toast_freeze:'❄️ 슬로우 모션... 천천히 감속중...',
+    toast_quake:'🌋 지진 발동!! 룰렛이 흔들립니다!!',
+  },
+  en:{
+    skills_label:'✨ Random skill incoming',
+    result_placeholder:'Result appears here',
+    panel_add:'Add Item',panel_items:'Items',panel_history:'History',
+    input_placeholder:'Type item and press Enter',
+    coffee_btn:'Buy me a coffee',
+    modal_title:'Buy me a coffee!',modal_desc:'Enjoying this app? Support the developer with a small coffee donation! ☺️',
+    modal_pay:'💙 Donate $5',modal_close:'Close',
+    result_label:'Winner!',result_hint:'Press SPIN to start',win_close:'Continue →',
+    toast_noitem:'Please add some items first',history_empty:'No history',no_items_hint:'Add items on the right panel',
+    win_congrats_arr:["Congratulations! 🎉","Incredible! 😱","Fate has spoken! ✨","Today's champion is YOU! 🌟","This is LEGENDARY! 🚀"],
+    win_taglines:['🎊 OVERWHELMING VICTORY 🎊','✨ YOU WERE CHOSEN ✨','🌟 A LEGEND IS BORN 🌟','🎯 DESTINED WINNER! 🎯','🏆 TODAY\'S MVP! 🏆'],
+    skills_used:'Skills fired',
+    sk_reverse_name:'Reverse',sk_reverse_desc:'Direction flips',
+    sk_boost_name:'Boost',sk_boost_desc:'Random item 3x expand',
+    sk_turbo_name:'Turbo',sk_turbo_desc:'Explosive acceleration',
+    sk_ghost_name:'Blackout',sk_ghost_desc:'Screen goes dark',
+    sk_freeze_name:'Slow-Mo',sk_freeze_desc:'Speed drops way down',
+    sk_quake_name:'Earthquake',sk_quake_desc:'Roulette shakes wildly',
+    toast_reverse:'🔄 Reverse! Direction flipped!',
+    toast_boost:'⚡ Boost activated! ',
+    toast_turbo:'🚀 TURBO!! Explosive acceleration!!',
+    toast_ghost:'👻 Blackout! Screen goes dark...',
+    toast_freeze:'❄️ Slow-Mo... Decelerating...',
+    toast_quake:'🌋 Earthquake!! Shaking violently!!',
+  },
+  ja:{
+    skills_label:'✨ ランダムスキル発動待機中',result_placeholder:'結果はここに表示されます',panel_add:'項目を追加',panel_items:'項目リスト',panel_history:'当選履歴',input_placeholder:'項目を入力してEnter',coffee_btn:'コーヒーをおごる',modal_title:'コーヒーをおごってください！',modal_desc:'アプリが気に入ったら、開発者にコーヒー1杯を支援してください！☺️',modal_pay:'💙 $5 支援する',modal_close:'閉じる',result_label:'当選！',result_hint:'SPINを押してください',win_close:'続ける →',toast_noitem:'項目を追加してください',history_empty:'履歴なし',no_items_hint:'右のパネルで項目を追加',
+    win_congrats_arr:['おめでとうございます！🎉','信じられない！😱','運命が選びました！✨','今日の主役はあなた！🌟','これは伝説だ！🚀'],win_taglines:['🎊 圧倒的お祝い 🎊','✨ あなたが選ばれました ✨','🌟 伝説誕生 🌟','🎯 運命の選択！🎯','🏆 本日のMVP！🏆'],skills_used:'発動スキル',
+    sk_reverse_name:'逆回転',sk_reverse_desc:'方向が反転する',sk_boost_name:'確率強化',sk_boost_desc:'項目3倍拡大',sk_turbo_name:'ターボ',sk_turbo_desc:'爆発的加速',sk_ghost_name:'ブラックアウト',sk_ghost_desc:'画面が暗くなる',sk_freeze_name:'スローモー',sk_freeze_desc:'速度が落ちる',sk_quake_name:'地震',sk_quake_desc:'激しく揺れる',
+    toast_reverse:'🔄 逆回転発動！',toast_boost:'⚡ 確率強化！',toast_turbo:'🚀 ターボ！爆発的加速！！',toast_ghost:'👻 ブラックアウト！',toast_freeze:'❄️ スローモー...',toast_quake:'🌋 地震発動！！',
+  },
+  'zh-CN':{
+    skills_label:'✨ 等待随机技能发动',result_placeholder:'结果显示在这里',panel_add:'添加选项',panel_items:'选项列表',panel_history:'中奖记录',input_placeholder:'输入选项后按Enter',coffee_btn:'请开发者喝咖啡',modal_title:'请我喝杯咖啡！',modal_desc:'喜欢这个应用吗？支持开发者一杯咖啡！☺️',modal_pay:'💙 捐赠 $5',modal_close:'关闭',result_label:'中奖！',result_hint:'点击旋转开始',win_close:'继续 →',toast_noitem:'请先添加选项',history_empty:'暂无记录',no_items_hint:'在右侧面板添加选项',
+    win_congrats_arr:['恭喜您！🎉','难以置信！😱','命运的选择！✨','今天的主角就是您！🌟','这是传奇！🚀'],win_taglines:['🎊 压倒性祝贺 🎊','✨ 命运选择了您 ✨','🌟 传奇诞生了 🌟','🎯 命中注定！🎯','🏆 今日MVP！🏆'],skills_used:'发动技能',
+    sk_reverse_name:'反转',sk_reverse_desc:'方向翻转',sk_boost_name:'概率强化',sk_boost_desc:'随机选项3倍扩大',sk_turbo_name:'涡轮',sk_turbo_desc:'爆炸式加速',sk_ghost_name:'黑屏',sk_ghost_desc:'屏幕变黑',sk_freeze_name:'慢动作',sk_freeze_desc:'速度降低',sk_quake_name:'地震',sk_quake_desc:'剧烈震动',
+    toast_reverse:'🔄 反转发动！',toast_boost:'⚡ 强化发动！',toast_turbo:'🚀 涡轮！爆炸加速！',toast_ghost:'👻 黑屏！',toast_freeze:'❄️ 慢动作...',toast_quake:'🌋 地震！！',
+  },
+  es:{
+    skills_label:'✨ Esperando habilidad aleatoria',result_placeholder:'El resultado aparece aquí',panel_add:'Agregar opción',panel_items:'Opciones',panel_history:'Historial',input_placeholder:'Escribe una opción y presiona Enter',coffee_btn:'Invita un café',modal_title:'¡Invítame un café!',modal_desc:'¿Te gusta esta app? ¡Apoya al desarrollador con una pequeña donación! ☺️',modal_pay:'💙 Donar $5',modal_close:'Cerrar',result_label:'¡Ganador!',result_hint:'Presiona SPIN para comenzar',win_close:'Continuar →',toast_noitem:'Por favor añade opciones primero',history_empty:'Sin historial',no_items_hint:'Agrega opciones en el panel derecho',
+    win_congrats_arr:['¡Felicitaciones! 🎉','¡Increíble! 😱','¡El destino ha hablado! ✨','¡El protagonista eres tú! 🌟','¡Esto es legendario! 🚀'],win_taglines:['🎊 VICTORIA APLASTANTE 🎊','✨ FUISTE ELEGIDO ✨','🌟 NACIÓ UNA LEYENDA 🌟','🎯 ¡GANADOR DEL DESTINO! 🎯','🏆 ¡MVP DEL DÍA! 🏆'],skills_used:'Habilidades usadas',
+    sk_reverse_name:'Reversa',sk_reverse_desc:'Dirección invertida',sk_boost_name:'Refuerzo',sk_boost_desc:'Sección 3x más grande',sk_turbo_name:'Turbo',sk_turbo_desc:'Aceleración explosiva',sk_ghost_name:'Apagón',sk_ghost_desc:'Pantalla se oscurece',sk_freeze_name:'Cámara Lenta',sk_freeze_desc:'Velocidad muy baja',sk_quake_name:'Terremoto',sk_quake_desc:'Ruleta tiembla fuerte',
+    toast_reverse:'🔄 ¡Reversa!',toast_boost:'⚡ ¡Refuerzo! ',toast_turbo:'🚀 ¡TURBO!! ¡Aceleración explosiva!',toast_ghost:'👻 ¡Apagón!',toast_freeze:'❄️ Cámara lenta...',toast_quake:'🌋 ¡Terremoto!!',
+  },
+};
+const LANG_LABELS={ko:'한국어',en:'English',ja:'日本語','zh-CN':'中文',es:'Español'};
+let currentLang='ko';
+function detectLang(){const n=navigator.language||'en';if(n.startsWith('ko'))return'ko';if(n.startsWith('ja'))return'ja';if(n.startsWith('zh'))return'zh-CN';if(n.startsWith('es'))return'es';return'en';}
+function t(k){const d=I18N[currentLang]||I18N['en'];return d[k]!==undefined?d[k]:k;}
+function applyLang(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.getAttribute('data-i18n')));
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>el.placeholder=t(el.getAttribute('data-i18n-placeholder')));
+  spinBtn.textContent='▶ '+(currentLang==='zh-CN'?'旋转':currentLang==='es'?'GIRAR':'SPIN');
+  buildSkillCards();renderItems();renderHistory();
+  document.getElementById('resultContent').innerHTML=`<span style="color:var(--text-muted);font-size:0.85rem;">${t('result_hint')}</span>`;
+}
+function buildLangSelect(){
+  const sel=document.getElementById('langSelect');sel.innerHTML='';
+  Object.keys(LANG_LABELS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=LANG_LABELS[k];if(k===currentLang)o.selected=true;sel.appendChild(o);});
+  sel.onchange=()=>{currentLang=sel.value;applyLang();};
+}
+
+/* ══════════════════════════════════════════════════════════
+   SKILL DEFINITIONS
+   6 skills, each with: id, icon, cssClass, color, effect()
+══════════════════════════════════════════════════════════ */
+const SKILL_DEFS = [
+  {
+    id:'reverse', icon:'🔄', cls:'sk-reverse', color:'#4af',
+    effect(){
+      direction*=-1;
+      omega=Math.min(omega*0.9+2,currentOmegaTarget*0.8);
+      friction=0.9915;
+      playSkillSound('reverse');
+      showToast(t('toast_reverse'));
+    }
+  },
+  {
+    id:'boost', icon:'⚡', cls:'sk-boost', color:'#fbbf24',
+    sustained:true, duration:5000,
+    effect(){
+      if(items.length){
+        boostedIdx=Math.floor(Math.random()*items.length);
+        renderItems();drawWheel();
+        playSkillSound('boost');
+        showToast(t('toast_boost')+'「'+items[boostedIdx].name+'」');
+      }
+    },
+    onEnd(){boostedIdx=-1;renderItems();}
+  },
+  {
+    id:'turbo', icon:'🚀', cls:'sk-turbo', color:'#f97316',
+    sustained:true, duration:3000,
+    effect(){
+      omega=Math.min(omega*1.6+5, currentOmegaTarget*1.8);
+      friction=0.9925;
+      canvas.classList.add('turbo-mode');
+      document.getElementById('wheelPointer').style.filter='drop-shadow(0 0 12px #f97316)';
+      playSkillSound('turbo');
+      showToast(t('toast_turbo'));
+    },
+    onEnd(){
+      canvas.classList.remove('turbo-mode');
+      document.getElementById('wheelPointer').style.filter='';
+    }
+  },
+  {
+    id:'ghost', icon:'👻', cls:'sk-ghost', color:'#a78bfa',
+    sustained:true, duration:4000,
+    effect(){
+      canvas.classList.add('ghost-mode');
+      playSkillSound('ghost');
+      showToast(t('toast_ghost'));
+    },
+    onEnd(){canvas.classList.remove('ghost-mode');}
+  },
+  {
+    id:'freeze', icon:'❄️', cls:'sk-freeze', color:'#38bdf8',
+    sustained:true, duration:4000,
+    effect(){
+      omega*=0.45;
+      friction=0.982;
+      canvas.classList.add('freeze-mode');
+      document.getElementById('wheelPointer').style.filter='drop-shadow(0 0 10px #38bdf8)';
+      playSkillSound('freeze');
+      showToast(t('toast_freeze'));
+    },
+    onEnd(){
+      // Snap back to a sustainable omega so spin keeps going
+      omega=Math.max(omega, currentOmegaTarget*0.3);
+      friction=0.9915;
+      canvas.classList.remove('freeze-mode');
+      document.getElementById('wheelPointer').style.filter='';
+    }
+  },
+  {
+    id:'quake', icon:'🌋', cls:'sk-quake', color:'#f43f5e',
+    sustained:true, duration:3500,
+    effect(){
+      document.getElementById('wheelFx').classList.add('quake');
+      canvas.classList.add('quake-mode');
+      playSkillSound('quake');
+      showToast(t('toast_quake'));
+    },
+    onEnd(){
+      document.getElementById('wheelFx').classList.remove('quake');
+      canvas.classList.remove('quake-mode');
+    }
+  },
+];
+
+function buildSkillCards(){
+  const cont=document.getElementById('skillsContainer');
+  cont.innerHTML='';
+  SKILL_DEFS.forEach(sk=>{
+    const d=document.createElement('div');
+    d.id='skillCard_'+sk.id;
+    d.className=`skill-card ${sk.cls} standby`;
+    d.innerHTML=`<span class="sk-icon">${sk.icon}</span><span class="sk-name">${t('sk_'+sk.id+'_name')}</span><span class="sk-desc">${t('sk_'+sk.id+'_desc')}</span>`;
+    cont.appendChild(d);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════
+   WEB AUDIO
+══════════════════════════════════════════════════════════ */
+let audioCtx=null,masterGain=null,muted=false,volume=0.7;
+function ac(){
+  if(!audioCtx){
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    masterGain=audioCtx.createGain();
+    masterGain.gain.value=volume;
+    masterGain.connect(audioCtx.destination);
+  }
+  return audioCtx;
+}
+function dest(){ac();return masterGain;}
+function playTick(spd){
+  if(muted)return;try{
+    const c=ac(),o=c.createOscillator(),g=c.createGain();
+    o.connect(g);g.connect(dest());o.type='triangle';o.frequency.value=160+spd*18;
+    g.gain.setValueAtTime(0.05,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.06);
+    o.start(c.currentTime);o.stop(c.currentTime+0.07);
+  }catch(e){}
+}
+function playSpinStart(){
+  if(muted)return;try{
+    const c=ac(),o=c.createOscillator(),g=c.createGain();
+    o.connect(g);g.connect(dest());o.type='sawtooth';
+    o.frequency.setValueAtTime(55,c.currentTime);o.frequency.linearRampToValueAtTime(145,c.currentTime+0.9);
+    g.gain.setValueAtTime(0,c.currentTime);g.gain.linearRampToValueAtTime(0.04,c.currentTime+0.3);g.gain.linearRampToValueAtTime(0,c.currentTime+1.2);
+    o.start(c.currentTime);o.stop(c.currentTime+1.3);
+  }catch(e){}
+}
+function playSkillSound(type){
+  if(muted)return;try{
+    const c=ac();
+    if(type==='reverse'){
+      [0,0.1,0.2].forEach((d,i)=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='sine';o.frequency.setValueAtTime(520-i*80,c.currentTime+d);o.frequency.exponentialRampToValueAtTime(200+i*60,c.currentTime+d+0.12);g.gain.setValueAtTime(0.07,c.currentTime+d);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d+0.14);o.start(c.currentTime+d);o.stop(c.currentTime+d+0.15);});
+    }else if(type==='boost'){
+      [0,280,560,840,1120].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='square';o.frequency.value=f;const d=i*0.06;g.gain.setValueAtTime(0.035,c.currentTime+d);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d+0.12);o.start(c.currentTime+d);o.stop(c.currentTime+d+0.13);});
+    }else if(type==='turbo'){
+      // Engine roar ascending
+      const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='sawtooth';o.frequency.setValueAtTime(80,c.currentTime);o.frequency.exponentialRampToValueAtTime(800,c.currentTime+0.5);g.gain.setValueAtTime(0.08,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.6);o.start(c.currentTime);o.stop(c.currentTime+0.65);
+      // Layered whistle
+      setTimeout(()=>{try{const o2=c.createOscillator(),g2=c.createGain();o2.connect(g2);g2.connect(dest());o2.type='sine';o2.frequency.setValueAtTime(400,c.currentTime);o2.frequency.exponentialRampToValueAtTime(1600,c.currentTime+0.4);g2.gain.setValueAtTime(0.05,c.currentTime);g2.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.45);o2.start(c.currentTime);o2.stop(c.currentTime+0.5);}catch(e){}},100);
+    }else if(type==='ghost'){
+      // Eerie descending chord
+      [300,200,133].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='sine';o.frequency.value=f;const d=i*0.12;g.gain.setValueAtTime(0.06,c.currentTime+d);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d+0.4);o.start(c.currentTime+d);o.stop(c.currentTime+d+0.45);});
+    }else if(type==='freeze'){
+      // Ice crystal: descending glassy
+      const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='sine';o.frequency.setValueAtTime(1200,c.currentTime);o.frequency.exponentialRampToValueAtTime(200,c.currentTime+0.6);g.gain.setValueAtTime(0.07,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.65);o.start(c.currentTime);o.stop(c.currentTime+0.7);
+      [0,0.1,0.2,0.3].forEach((d,i)=>{const o2=c.createOscillator(),g2=c.createGain();o2.connect(g2);g2.connect(dest());o2.type='triangle';o2.frequency.value=1400-i*200;g2.gain.setValueAtTime(0.03,c.currentTime+d);g2.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d+0.12);o2.start(c.currentTime+d);o2.stop(c.currentTime+d+0.13);});
+    }else if(type==='quake'){
+      // Deep rumble + impacts
+      const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='sawtooth';o.frequency.value=40;g.gain.setValueAtTime(0.12,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.8);o.start(c.currentTime);o.stop(c.currentTime+0.85);
+      [0.1,0.25,0.4,0.55].forEach(d=>{try{const o2=c.createOscillator(),g2=c.createGain();o2.connect(g2);g2.connect(dest());o2.type='triangle';o2.frequency.value=60+Math.random()*40;g2.gain.setValueAtTime(0.07,c.currentTime+d);g2.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d+0.08);o2.start(c.currentTime+d);o2.stop(c.currentTime+d+0.1);}catch(e){}});
+    }else if(type==='announce'){
+      const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='sine';o.frequency.setValueAtTime(440,c.currentTime);o.frequency.linearRampToValueAtTime(880,c.currentTime+0.15);g.gain.setValueAtTime(0.08,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.2);o.start(c.currentTime);o.stop(c.currentTime+0.22);
+    }
+  }catch(e){}
+}
+function playWinFanfare(){
+  if(muted)return;try{
+    const c=ac();
+    const b=c.createOscillator(),bg=c.createGain();b.connect(bg);bg.connect(dest());b.type='sine';b.frequency.value=55;bg.gain.setValueAtTime(0.18,c.currentTime);bg.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.7);b.start(c.currentTime);b.stop(c.currentTime+0.72);
+    [[523,659,784,0],[587,740,880,0.18],[659,830,988,0.36],[784,988,1175,0.54],[1047,1319,1568,0.72]].forEach(([a,bb,cc,d])=>{
+      [a,bb,cc].forEach(f=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='triangle';o.frequency.value=f;g.gain.setValueAtTime(0,c.currentTime+d);g.gain.linearRampToValueAtTime(0.065,c.currentTime+d+0.04);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d+0.4);o.start(c.currentTime+d);o.stop(c.currentTime+d+0.42);});
+    });
+    setTimeout(()=>{if(muted)return;try{[1200,1500,1800,2100].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(dest());o.type='sine';o.frequency.value=f;const d=i*0.08;g.gain.setValueAtTime(0.04,c.currentTime+d);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d+0.15);o.start(c.currentTime+d);o.stop(c.currentTime+d+0.17);});}catch(e){}},750);
+  }catch(e){}
+}
+document.getElementById('muteBtn').addEventListener('click',()=>{
+  muted=!muted;
+  document.getElementById('muteBtn').textContent=muted?'🔇':'🔊';
+  if(masterGain) masterGain.gain.value = muted ? 0 : volume;
+});
+document.getElementById('volSlider').addEventListener('input',e=>{
+  volume=e.target.value/100;
+  if(!muted && masterGain) masterGain.gain.value=volume;
+  // Update icon based on level
+  const icon = volume===0?'🔇':volume<0.4?'🔉':'🔊';
+  document.getElementById('muteBtn').textContent=icon;
+  if(volume===0){muted=true;}else{muted=false;}
+});
+
+/* ══════════════════════════════════════════════════════════
+   State
+══════════════════════════════════════════════════════════ */
+const PALETTE=['#4361ee','#7209b7','#f72585','#4cc9f0','#4ade80','#fb923c','#a78bfa','#38bdf8','#f97316','#e879f9','#22d3ee','#facc15','#f43f5e','#86efac','#c084fc'];
+let items=[],history=[],boostedIdx=-1;
+const SK='spinmaster_items_v4',HK='spinmaster_history_v4';
+function loadData(){try{const s=localStorage.getItem(SK);if(s)items=JSON.parse(s);const h=localStorage.getItem(HK);if(h)history=JSON.parse(h);}catch(e){}}
+function saveData(){localStorage.setItem(SK,JSON.stringify(items));localStorage.setItem(HK,JSON.stringify(history));}
+
+/* ══════════════════════════════════════════════════════════
+   Canvas / Physics
+   Target: ~11 seconds of spin.
+   omega_initial ≈ 30, friction = 0.9942 per frame @60fps
+   Total time ≈ -1/ln(friction)/60 * ln(0.003/30) ≈ 11s
+══════════════════════════════════════════════════════════ */
+const canvas=document.getElementById('rouletteCanvas'),ctx=canvas.getContext('2d'),SZ=500;
+let angle=0, omega=0, friction=0.9942, spinning=false, direction=1;
+let currentOmegaTarget=30; // track the "natural" omega for skills to reference
+let lastSoundAngle=0;
+
+function getWeights(){return items.length?items.map((_,i)=>i===boostedIdx?3:1):[];}
+function getAngles(){const w=getWeights(),tot=w.reduce((a,b)=>a+b,0),arr=[];let cur=0;w.forEach(v=>{arr.push([cur,cur+v/tot*Math.PI*2]);cur+=v/tot*Math.PI*2;});return arr;}
+
+function drawWheel(){
+  const cx=SZ/2,cy=SZ/2,r=SZ/2-8;
+  ctx.clearRect(0,0,SZ,SZ);
+  if(!items.length){
+    ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.strokeStyle='rgba(100,100,255,0.25)';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='rgba(100,100,255,0.08)';ctx.fill();
+    ctx.fillStyle='rgba(150,150,200,0.5)';ctx.font='500 16px "Noto Sans KR",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(t('no_items_hint'),cx,cy);return;
+  }
+  const AA=getAngles();
+  AA.forEach(([s,e],i)=>{
+    const a0=s+angle,a1=e+angle,mid=(a0+a1)/2,color=items[i].color,boost=(i===boostedIdx);
+    ctx.save();ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,boost?r+8:r,a0,a1);ctx.closePath();ctx.fillStyle=color;ctx.fill();
+    if(boost){ctx.shadowColor='#fbbf24';ctx.shadowBlur=22;}
+    ctx.strokeStyle=boost?'#fbbf24':'rgba(0,0,0,0.3)';ctx.lineWidth=boost?3:1.5;ctx.stroke();ctx.restore();
+    const sl=e-s,lr=r*(sl>0.25?0.68:0.72);
+    ctx.save();ctx.translate(cx+Math.cos(mid)*lr,cy+Math.sin(mid)*lr);ctx.rotate(mid+Math.PI/2);
+    ctx.fillStyle='#fff';ctx.shadowColor='rgba(0,0,0,0.7)';ctx.shadowBlur=4;
+    ctx.font=`700 ${sl>0.5?19:sl>0.2?15:12}px "Noto Sans KR","Orbitron",sans-serif`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(items[i].name.length>10?items[i].name.slice(0,9)+'…':items[i].name,0,0);ctx.restore();
+  });
+  ctx.save();ctx.beginPath();ctx.arc(cx,cy,30,0,Math.PI*2);
+  const grd=ctx.createRadialGradient(cx,cy,4,cx,cy,30);grd.addColorStop(0,'#1e1e3a');grd.addColorStop(1,'#0a0a14');
+  ctx.fillStyle=grd;ctx.fill();ctx.strokeStyle='rgba(100,100,255,0.4)';ctx.lineWidth=2;ctx.stroke();
+  ctx.fillStyle='rgba(160,160,255,0.85)';ctx.font='bold 11px Orbitron';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('SPIN',cx,cy);ctx.restore();
+}
+
+function getWinner(){
+  if(!items.length)return null;
+  const AA=getAngles();
+  let ptr=((-Math.PI/2-angle)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+  for(let i=0;i<AA.length;i++)if(ptr>=AA[i][0]&&ptr<AA[i][1])return i;
+  return 0;
+}
+
+function spinLoop(){
+  angle+=omega*0.016*direction;
+  const af = Math.abs(omega)<1.5 ? friction*0.974 : friction;
+  omega*=af;
+  drawWheel();
+
+  // Tick sounds at segment crossings
+  const AA=getAngles();
+  const ptr=((-Math.PI/2-angle)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+  const prev=((-Math.PI/2-lastSoundAngle)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+  AA.forEach(([s])=>{if((prev<s&&ptr>=s)||(prev>ptr&&(s>prev||s<=ptr)))playTick(Math.min(omega,20));});
+  lastSoundAngle=angle;
+
+  if(Math.abs(omega)<0.06){
+    spinning=false;omega=0;
+    canvas.classList.remove('spinning','turbo-mode','ghost-mode','freeze-mode');
+    document.getElementById('wheelPointer').style.filter='';
+    document.getElementById('wheelFx').classList.remove('quake');
+    spinBtn.disabled=false;
+    endAllSustainedSkills();
+    onSpinEnd();
+    return;
+  }
+  requestAnimationFrame(spinLoop);
+}
+
+function startSpin(){
+  if(!items.length){showToast(t('toast_noitem'));return;}
+  if(spinning)return;
+  spinning=true;direction=1;
+  friction=0.9976;
+  omega=36+Math.random()*4;  // ~38 → ~39s spin
+  currentOmegaTarget=omega;
+  lastSoundAngle=angle;
+  canvas.classList.add('spinning');
+  spinBtn.disabled=true;
+  playSpinStart();
+  scheduleSkillBarrage();
+  requestAnimationFrame(spinLoop);
+}
+
+function onSpinEnd(){
+  const idx=getWinner();if(idx===null)return;
+  const w=items[idx];
+  document.getElementById('resultContent').innerHTML=`<div><div class="result-label">${t('result_label')}</div><div class="result-value" style="color:${w.color}">${w.name}</div></div>`;
+  history.unshift({name:w.name,color:w.color,time:Date.now()});if(history.length>30)history.pop();
+  saveData();renderHistory();
+  playWinFanfare();
+  setTimeout(()=>showWinOverlay(w),280);
+}
+
+/* ══════════════════════════════════════════════════════════
+   SKILL BARRAGE SYSTEM
+   5–6 skills fire per spin, spread across ~2s–9s into the 11s spin.
+   Each skill: announce → 1.2s later → fire → sustain if applicable
+══════════════════════════════════════════════════════════ */
+let skillTimers=[];
+let firedSkillsThisSpin=[];
+let sustainedCleanups=[];  // {timerId, skillDef} for sustained effects
+
+function scheduleSkillBarrage(){
+  skillTimers.forEach(clearTimeout);skillTimers=[];
+  firedSkillsThisSpin=[];
+  sustainedCleanups.forEach(sc=>clearTimeout(sc.tid));sustainedCleanups=[];
+  resetAllSkillCards();
+
+  const count=3+Math.floor(Math.random()*2); // 3 or 4 skills
+
+  // Skill pool: all 6 skills, pick randomly with replacement allowed (but limit same skill twice in a row)
+  const pool=[...SKILL_DEFS];
+  const chosen=[];
+  let last='';
+  for(let i=0;i<count;i++){
+    let candidates=pool.filter(s=>s.id!==last);
+    const sk=candidates[Math.floor(Math.random()*candidates.length)];
+    chosen.push(sk);last=sk.id;
+  }
+
+  // Spread firing times: first at ~1.5s, last at ~8.5s from spin start (spin is ~11s)
+  const windowStart=2000, windowEnd=28000;
+  const step=(windowEnd-windowStart)/(count-1);
+
+  chosen.forEach((sk,i)=>{
+    const announceAt=windowStart+i*step;
+    const fireAt=announceAt+1000;
+    skillTimers.push(
+      setTimeout(()=>{ if(!spinning)return; announceSkill(sk,i); }, announceAt),
+      setTimeout(()=>{ if(!spinning)return; fireSkill(sk,i); }, fireAt)
+    );
+  });
+}
+
+function announceSkill(sk, slotIdx){
+  const card=document.getElementById('skillCard_'+sk.id);
+  if(!card)return;
+  card.classList.remove('standby','fired','sustained');
+  card.classList.add('active');
+  // Remove old badge if any
+  card.querySelectorAll('.skill-badge').forEach(b=>b.remove());
+  const badge=document.createElement('div');badge.className='skill-badge';badge.textContent='⚡ INCOMING';card.appendChild(badge);
+
+  // Big center announce
+  const announceEl=document.getElementById('skillAnnounce');
+  const iconEl=document.getElementById('announceIcon');
+  const nameEl=document.getElementById('announceName');
+  announceEl.classList.remove('pop');
+  iconEl.textContent=sk.icon;
+  iconEl.style.color=sk.color;
+  nameEl.textContent=t('sk_'+sk.id+'_name');
+  nameEl.style.color=sk.color;
+  // Force reflow
+  void announceEl.offsetWidth;
+  announceEl.classList.add('pop');
+
+  playSkillSound('announce');
+}
+
+function fireSkill(sk, slotIdx){
+  if(!spinning)return;
+  const card=document.getElementById('skillCard_'+sk.id);
+  if(!card)return;
+  card.classList.remove('active');
+  card.querySelectorAll('.skill-badge').forEach(b=>b.remove());
+  firedSkillsThisSpin.push(sk.id);
+
+  sk.effect();
+
+  if(sk.sustained && sk.duration){
+    card.classList.add('sustained');
+    // Animated timer bar
+    const bar=document.createElement('div');bar.className='skill-timer-bar';card.appendChild(bar);
+    const start=Date.now();
+    const tickBar=()=>{
+      const pct=Math.max(0,1-(Date.now()-start)/sk.duration);
+      bar.style.transform=`scaleX(${pct})`;
+      if(pct>0)requestAnimationFrame(tickBar);
+    };
+    requestAnimationFrame(tickBar);
+
+    const tid=setTimeout(()=>{
+      if(sk.onEnd)sk.onEnd();
+      card.classList.remove('sustained');card.classList.add('fired');
+      card.querySelectorAll('.skill-timer-bar').forEach(b=>b.remove());
+    },sk.duration);
+    sustainedCleanups.push({tid,sk});
+  } else {
+    card.classList.add('fired');
+  }
+}
+
+function endAllSustainedSkills(){
+  sustainedCleanups.forEach(({tid,sk})=>{
+    clearTimeout(tid);
+    if(sk.onEnd)sk.onEnd();
+  });
+  sustainedCleanups=[];
+  boostedIdx=-1;renderItems();
+  canvas.classList.remove('turbo-mode','ghost-mode','freeze-mode');
+  document.getElementById('wheelFx').classList.remove('quake');
+  document.getElementById('wheelPointer').style.filter='';
+}
+
+function resetAllSkillCards(){
+  SKILL_DEFS.forEach(sk=>{
+    const c=document.getElementById('skillCard_'+sk.id);
+    if(!c)return;
+    c.className=`skill-card ${sk.cls} standby`;
+    c.querySelectorAll('.skill-badge,.skill-timer-bar').forEach(b=>b.remove());
+  });
+}
+
+/* ══════════════════════════════════════════════════════════
+   WIN OVERLAY
+══════════════════════════════════════════════════════════ */
+function showWinOverlay(w){
+  const tags=t('win_taglines'),congarr=t('win_congrats_arr');
+  document.getElementById('winTagline').textContent=tags[Math.floor(Math.random()*tags.length)];
+  document.getElementById('winLabel').textContent=t('result_label');
+  const nm=document.getElementById('winName');nm.textContent=w.name;nm.style.color=w.color;
+  document.getElementById('winCongrats').textContent=congarr[Math.floor(Math.random()*congarr.length)];
+  document.getElementById('winClose').textContent=t('win_close');
+  // Skill chips
+  const su=document.getElementById('winSkillsUsed');su.innerHTML='';
+  if(firedSkillsThisSpin.length){
+    const label=document.createElement('span');label.style.cssText='font-size:0.7rem;color:var(--text-muted);width:100%;text-align:center;';label.textContent=t('skills_used')+':';su.appendChild(label);
+    firedSkillsThisSpin.forEach(id=>{
+      const sk=SKILL_DEFS.find(s=>s.id===id);if(!sk)return;
+      const chip=document.createElement('div');chip.className='win-skill-chip';chip.style.borderColor=sk.color+'66';chip.style.color=sk.color;
+      chip.textContent=sk.icon+' '+t('sk_'+id+'_name');su.appendChild(chip);
+    });
+  }
+  document.getElementById('winOverlay').classList.add('show');
+  fireMegaConfetti(w.color);
+}
+function hideWinOverlay(){document.getElementById('winOverlay').classList.remove('show');}
+document.getElementById('winClose').addEventListener('click',hideWinOverlay);
+document.getElementById('winOverlay').addEventListener('click',e=>{if(e.target===document.getElementById('winOverlay'))hideWinOverlay();});
+
+function fireMegaConfetti(color){
+  confetti({particleCount:200,spread:110,startVelocity:62,origin:{x:0.5,y:0.48},colors:[color,'#ffffff','#a78bfa','#f472b6','#fbbf24']});
+  setTimeout(()=>{confetti({particleCount:90,angle:55,spread:75,startVelocity:65,origin:{x:0,y:0.65},colors:[color,'#4af','#fff']});confetti({particleCount:90,angle:125,spread:75,startVelocity:65,origin:{x:1,y:0.65},colors:[color,'#f472b6','#fff']});},200);
+  setTimeout(()=>{confetti({particleCount:70,spread:360,startVelocity:35,origin:{x:0.25,y:0.35},shapes:['star'],colors:['#fbbf24','#fff']});confetti({particleCount:70,spread:360,startVelocity:35,origin:{x:0.75,y:0.35},shapes:['star'],colors:['#a78bfa','#fff']});},420);
+  const end=Date.now()+3000;
+  (function rain(){confetti({particleCount:7,angle:60,spread:55,origin:{x:0},colors:[color,'#fff','#a78bfa']});confetti({particleCount:7,angle:120,spread:55,origin:{x:1},colors:[color,'#4af','#f472b6']});if(Date.now()<end)requestAnimationFrame(rain);})();
+}
+
+/* ══════════════════════════════════════════════════════════
+   Items
+══════════════════════════════════════════════════════════ */
+function addItem(n){n=n.trim();if(!n)return;items.push({name:n,color:PALETTE[items.length%PALETTE.length]});saveData();renderItems();drawWheel();}
+function removeItem(i){items.splice(i,1);if(boostedIdx===i)boostedIdx=-1;else if(boostedIdx>i)boostedIdx--;saveData();renderItems();drawWheel();}
+function renderItems(){
+  const list=document.getElementById('itemsList');list.innerHTML='';
+  if(!items.length){list.innerHTML=`<div style="color:var(--text-muted);font-size:0.8rem;text-align:center;padding:1rem 0;">${t('no_items_hint')}</div>`;return;}
+  items.forEach((it,i)=>{
+    const row=document.createElement('div');row.className='item-row'+(i===boostedIdx?' boosted':'');
+    row.innerHTML=`<div class="item-color" style="background:${it.color}"></div><span class="item-name">${it.name}</span><span class="item-boost">⚡ Boost</span><button class="item-del" data-i="${i}">✕</button>`;
+    list.appendChild(row);
+  });
+  list.querySelectorAll('.item-del').forEach(b=>b.addEventListener('click',()=>removeItem(parseInt(b.dataset.i))));
+}
+function renderHistory(){
+  const el=document.getElementById('historyList');
+  if(!history.length){el.innerHTML=`<span>${t('history_empty')}</span>`;return;}
+  el.innerHTML='';
+  history.slice(0,10).forEach(h=>{
+    const d=document.createElement('div');d.style.cssText='display:flex;align-items:center;gap:6px;padding:3px 0;';
+    d.innerHTML=`<div style="width:8px;height:8px;border-radius:50%;background:${h.color};flex-shrink:0"></div><span style="flex:1">${h.name}</span><span style="color:var(--text-muted);font-size:0.7rem">${new Date(h.time).toLocaleTimeString()}</span>`;
+    el.appendChild(d);
+  });
+}
+
+/* ══ Toast ══ */
+let toastTimer=null;
+function showToast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2600);}
+
+/* ══ Coffee ══ */
+document.getElementById('coffeeBtn').addEventListener('click',()=>document.getElementById('coffeeModal').classList.remove('hidden'));
+document.getElementById('modalClose').addEventListener('click',()=>document.getElementById('coffeeModal').classList.add('hidden'));
+document.getElementById('coffeeModal').addEventListener('click',e=>{if(e.target===document.getElementById('coffeeModal'))document.getElementById('coffeeModal').classList.add('hidden');});
+
+/* ══ Spin + Input ══ */
+const spinBtn=document.getElementById('spinBtn');
+spinBtn.addEventListener('click',()=>{try{ac().resume();}catch(e){}startSpin();});
+const inp=document.getElementById('itemInput');
+inp.addEventListener('keydown',e=>{if(e.key==='Enter'){addItem(inp.value);inp.value='';}});
+document.getElementById('addBtn').addEventListener('click',()=>{addItem(inp.value);inp.value='';});
+
+/* ══ Init ══ */
+loadData();
+if(!items.length)['사과','바나나','딸기','포도','수박'].forEach((n,i)=>items.push({name:n,color:PALETTE[i]}));
+saveData();
+currentLang=detectLang();buildLangSelect();buildSkillCards();applyLang();drawWheel();renderHistory();
+
+// Idle drift
+(function idleDraw(){if(!spinning){angle+=0.0006;}drawWheel();requestAnimationFrame(idleDraw);})();
+</script>
+</body>
+</html>
